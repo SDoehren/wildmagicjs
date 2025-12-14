@@ -2,12 +2,71 @@ function message(msg) {
     ChatMessage.create({user: game.user._id, content: msg, speaker: ChatMessage.getSpeaker(),})
 }
 
+function creaturesinrange(range) {
+    let owntoken = canvas.tokens.controlled[0]
+    let sqsize = canvas.scene.dimensions.size
+    let sqdist = canvas.scene.dimensions.distance
+    let alltokens = canvas.tokens.placeables.filter(x => x.worldVisible)
+
+
+    let owntokenloc = owntoken.position
+    let selfsize = Math.max(...owntoken.hitArea.points)
+
+    let owntokencentre = [owntokenloc.x + selfsize / 2, owntokenloc.y + selfsize / 2]
+    let nearby = []
+
+    for (let i = 0; i < alltokens.length; i++) {
+        let token = alltokens[i]
+        let tokenloc = token.position
+        let tokensize = Math.max(...token.hitArea.points)
+        let tokensquares = tokensize / sqsize
+        let topleftsq = [tokenloc.x + sqsize / 2, tokenloc.y + sqsize / 2]
+        let targeted = false
+        for (let x = 0; x < tokensquares; x++) {
+            for (let y = 0; y < tokensquares; y++) {
+                let tokencentre = [topleftsq[0] + x * sqsize, topleftsq[1] + y * sqsize]
+                let aa = Math.pow(owntokencentre[0] - tokencentre[0], 2)
+                let ab = Math.pow(owntokencentre[1] - tokencentre[1], 2)
+                let c = Math.pow(aa + ab, 0.5)
+                if ((c / sqsize * sqdist) <= range) {
+                    nearby.push(token)
+                    targeted = true
+                    canvas.ping(token.center, {
+                        style: "pulse",
+                        duration: 2500
+                    });
+                    break;
+                }
+            }
+            if (targeted) {
+                break;
+            }
+        }
+    }
+    return nearby;
+}
+
+function creaturesinrangeasstr(range) {
+    let nearby = creaturesinrange(range)
+    txt = `Creatures within ${range} feet:<br>`;
+
+
+    for (let i = 0; i < nearby.length; i++) {
+        txt += nearby[i].name + "<br>"
+    }
+    return [txt, nearby]
+}
+
+
 async function addeffects(effects) {
     console.log(effects)
-    effectlist = []
+    let effectlist = []
+    let effectname = ""
     for (let i = 0; i < effects.length; i++) {
+        effectname = `Wild Surge - ${effects[i][2]}`;
+
         effect = new ActiveEffect({
-            name: "Wild Surge",
+            name: effectname,
             img: 'icons/svg/ice-aura.svg',
             disabled: false,
             duration: {"seconds": parseInt(effects[i][1])},
@@ -19,9 +78,9 @@ async function addeffects(effects) {
     await canvas.tokens.controlled[0].actor.createEmbeddedDocuments("ActiveEffect", effectlist)
 }
 
-function messageandeffect(msg, time) {
+function messageandeffect(msg, time, summary) {
     message(msg)
-    addeffects([[msg, time]])
+    addeffects([[msg, time, summary]])
 }
 
 if (canvas.tokens.controlled[0] === undefined) {
@@ -35,15 +94,15 @@ if (canvas.tokens.controlled[0] === undefined) {
 
 } else {
     let surgecheck = await new Roll('1d20').evaluate()
-    /*while (surgeroll._total != 100) {
-        surgeroll = await new Roll('1d100').evaluate()
-    }*/
 
     await game.dice3d.showForRoll(surgecheck)
 
     let txt = ""
+    let effectsummary = ""
+
+    surgecheck._total = 20
     if (surgecheck._total != 20) {
-        txt = "Surge Check:"+"<strong>" + surgecheck._total + "</strong> - No Surge"
+        txt = "Surge Check:" + "<strong>" + surgecheck._total + "</strong> - No Surge"
         message(txt)
 
     } else {
@@ -61,21 +120,24 @@ if (canvas.tokens.controlled[0] === undefined) {
             "</strong>"
         message(txt)
         let surgeroll = await new Roll('1d100').evaluate()
-        /*while (surgeroll._total != 100) {
-            surgeroll = await new Roll('1d100').evaluate()
-        }*/
 
         await game.dice3d.showForRoll(surgeroll)
 
         txt = '<strong>' + surgeroll._total + '</strong>: '
         let sideroll;
+        let effecttxt;
+        let creaturesinrangeasstrresult;
         switch (surgeroll._total) {
             case 1:
             case 2:
             case 3:
             case 4:
-                txt += 'Roll on this table at the start of each of your turns for the next minute, ignoring this result on subsequent rolls.';
-                addeffects([["Roll on this table at the start of each of your turns for the next minute, ignoring this result on subsequent rolls.", 60]])
+                effecttxt = "Roll on this table at the start of each of your turns for the next minute, ignoring this result on subsequent rolls."
+                txt += effecttxt;
+
+                effectsummary = "Roll Surge Every Turn"
+
+                addeffects([[effecttxt, 60, effectsummary]])
                 message(txt);
                 break;
             case 5:
@@ -97,33 +159,35 @@ if (canvas.tokens.controlled[0] === undefined) {
                 txt = 'A '
                 switch (sideroll._total) {
                     case 1:
-                        message('<strong>1</strong>: a Modron Duodrone appears; ');
                         txt += 'Modron Duodrone'
                         break;
                     case 2:
-                        message('<strong>2</strong>: a Flumph appears; ');
                         txt += 'Flumph'
                         break;
                     case 3:
-                        message('<strong>3</strong>: a Modron Monodrone appears; ');
                         txt += 'Modron Monodrone'
                         break;
                     case 4:
-                        message('<strong>4</strong>: a Unicorn appears.');
                         txt += 'Unicorn'
                         break;
                 }
+                message(`<strong>${sideroll._total}</strong>- ${txt} appears`);
+                effectsummary = `${txt} Friend`
+
                 txt += ' that is Friendly toward you appears in a random unoccupied space within 60 feet of you. ' +
                     'The creature is under the DM’s control and disappears 1 minute later. '
-                addeffects([[txt, 60]])
+
+
+                addeffects([[txt, 60, effectsummary]])
                 break;
             case 9:
             case 10:
             case 11:
             case 12:
                 txt += 'For the next minute, you regain <strong>5</strong> Hit Points at the start of each of your turns.';
+                effectsummary = "5hp per turn"
                 message(txt);
-                addeffects([[txt, 60]])
+                addeffects([[txt, 60, effectsummary]])
                 break;
             case 13:
             case 14:
@@ -131,7 +195,8 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 16:
                 txt += 'Creatures have <strong>Disadvantage</strong> on saving throws against the next spell you cast in the next minute that involves a saving throw.';
                 message(txt);
-                addeffects([[txt, 60]])
+                effectsummary = "Disadvantage on save against your spells"
+                addeffects([[txt, 60, effectsummary]])
                 break;
             case 17:
             case 18:
@@ -153,28 +218,28 @@ if (canvas.tokens.controlled[0] === undefined) {
                 await game.dice3d.showForRoll(sideroll)
                 switch (sideroll._total) {
                     case 1:
-                        messageandeffect('<strong>1</strong>: For 1 minute, you’re surrounded by faint, ethereal music only you and creatures within 5 feet of you can hear; ', 60);
+                        messageandeffect('<strong>1</strong>: For 1 minute, you’re surrounded by faint, ethereal music only you and creatures within 5 feet of you can hear; ', 60, 'you’re surrounded by faint, ethereal music');
                         break;
                     case 2:
-                        messageandeffect('<strong>2</strong>: For 1 minute, your size increases by one size category; ', 60);
+                        messageandeffect('<strong>2</strong>: For 1 minute, your size increases by one size category; ', 60, 'you are bigger');
                         break;
                     case 3:
-                        message('<strong>3</strong>: You grow a long beard made of feathers that remains until you sneeze, at which point the feathers explode from your face and vanish; ');
+                        messageandeffect('<strong>3</strong>: You grow a long beard made of feathers that remains until you sneeze, at which point the feathers explode from your face and vanish; ', 99999, "Beard");
                         break;
                     case 4:
-                        messageandeffect('<strong>4</strong>: For 1 minute, you must shout when you speak.', 60);
+                        messageandeffect('<strong>4</strong>: For 1 minute, you must shout when you speak.', 60, "You're Shouty");
                         break;
                     case 5:
-                        messageandeffect('<strong>5</strong>: For 1 minute, illusory butterflies flutter in the air within 10 feet of you.', 60);
+                        messageandeffect('<strong>5</strong>: For 1 minute, illusory butterflies flutter in the air within 10 feet of you.', 60, 'Butterflies');
                         break;
                     case 6:
-                        messageandeffect('<strong>6</strong>: For 1 minute, an eye appears on your forehead, granting you Advantage on Wisdom (Perception) checks.', 60);
+                        messageandeffect('<strong>6</strong>: For 1 minute, an eye appears on your forehead, granting you Advantage on Wisdom (Perception) checks.', 60, 'Third Eye - Advantage on Wisdom (Perception) checks');
                         break;
                     case 7:
-                        messageandeffect('<strong>7</strong>: For 1 minute, pink bubbles float out of your mouth whenever you speak.', 60);
+                        messageandeffect('<strong>7</strong>: For 1 minute, pink bubbles float out of your mouth whenever you speak.', 60, "Bubbles");
                         break;
                     case 8:
-                        messageandeffect('<strong>8</strong>: your skin turns a vibrant shade of blue for 24 hours or until the effect is ended by a Remove Curse spell.', 60 * 60 * 24);
+                        messageandeffect('<strong>8</strong>: your skin turns a vibrant shade of blue for 24 hours or until the effect is ended by a Remove Curse spell.', 60 * 60 * 24, "You're Blue");
                         break;
                 }
                 break;
@@ -183,8 +248,12 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 22:
             case 23:
             case 24:
-                txt += 'For the next minute, all your spells with a casting time of an action have a casting time of a Bonus Action.';
+                effecttxt = 'For the next minute, all your spells with a casting time of an action have a casting time of a Bonus Action.';
+                effectsummary = "casting time = Bonus Action"
+
+                txt += effecttxt
                 message(txt);
+                addeffects([[txt, 60, effectsummary]])
                 break;
             case 25:
             case 26:
@@ -193,6 +262,7 @@ if (canvas.tokens.controlled[0] === undefined) {
                 txt += 'You are transported to the Astral Plane until the end of your next turn. <br>' +
                     'You then return to the space you previously occupied or the nearest unoccupied space if that space is occupied.';
                 message(txt);
+                addeffects([[txt, 7, "Astral Plane!"]])
                 break;
             case 29:
             case 30:
@@ -200,14 +270,14 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 32:
                 txt += 'The next time you cast a spell that deals damage within the next minute, don’t roll the spell’s damage dice for the damage. <br>' +
                     'Instead use the highest number possible for each damage die.';
-                messageandeffect(txt, 60);
+                messageandeffect(txt, 60, "Once - Max Damage");
                 break;
             case 33:
             case 34:
             case 35:
             case 36:
                 txt += 'You have Resistance to all damage for the next minute.';
-                messageandeffect(txt, 60);
+                messageandeffect(txt, 60, 'Resistance to all damage');
                 break;
             case 37:
             case 38:
@@ -216,49 +286,27 @@ if (canvas.tokens.controlled[0] === undefined) {
                 txt += 'You turn into a potted plant until the start of your next turn. <br>' +
                     'While you’re a plant, you have the Incapacitated condition and have Vulnerability to all damage. <br>' +
                     'If you drop to 0 Hit Points, your pot breaks, and your form reverts.';
-                messageandeffect(txt, 7);
+                messageandeffect(txt, 7, 'Potted Plant');
                 break;
             case 41:
             case 42:
             case 43:
             case 44:
                 txt += 'For the next minute, you can teleport up to 20 feet as a Bonus Action on each of your turns.';
-                messageandeffect(txt, 60);
+                messageandeffect(txt, 60, 'At Will Teleport');
                 break;
             case 45:
             case 46:
             case 47:
             case 48:
                 txt += 'You and up to three creatures you choose within 30 feet of you have the Invisible condition for 1 minute. <br>' +
-                    'This invisibility ends on a creature immediately after it makes an attack roll, deals damage, or casts a spell.'
+                    'This invisibility ends on a creature immediately after it makes an attack roll, deals damage, or casts a spell. '
 
-                addeffects([txt, 60])
+                txt += '<br><br><br>'
 
-                txt += '<br><br><br>Creatures within 30 feet:<br>';
+                creaturesinrangeasstrresult = creaturesinrangeasstr(30)
+                txt += creaturesinrangeasstrresult[0]
 
-
-                owntoken = canvas.tokens.controlled[0]
-                sqsize = canvas.scene.dimensions.size
-                sqdist = canvas.scene.dimensions.distance
-                alltokens = canvas.tokens.placeables.filter(x => x.worldVisible)
-                owntokenloc = owntoken.position
-                owntokencentre = [owntokenloc.x + owntoken.hitArea.height / 2, owntokenloc.y + owntoken.hitArea.width / 2]
-                nearby = []
-                for (let i = 0; i < alltokens.length; i++) {
-                    token = alltokens[i]
-                    tokenloc = token.position
-                    tokencentre = [tokenloc.x + token.hitArea.height / 2, tokenloc.y + token.hitArea.width / 2]
-                    aa = Math.pow(owntokencentre[0] - tokencentre[0], 2)
-                    ab = Math.pow(owntokencentre[1] - tokencentre[1], 2)
-                    c = Math.pow(aa + ab, 0.5)
-                    if ((c / sqsize * sqdist) <= 30) {
-                        nearby.push(token)
-                    }
-                }
-
-                for (let i = 0; i < nearby.length; i++) {
-                    txt += nearby[i].name + "<br>"
-                }
                 message(txt);
 
                 break;
@@ -267,7 +315,7 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 51:
             case 52:
                 txt += 'A spectral shield hovers near you for the next minute, granting you a +2 bonus to AC and immunity to Magic Missile.';
-                messageandeffect(txt, 60);
+                messageandeffect(txt, 60, 'Spectral Shield - +2 AC');
                 break;
             case 53:
             case 54:
@@ -297,63 +345,52 @@ if (canvas.tokens.controlled[0] === undefined) {
 
                 sideroll = await new Roll('1d10').evaluate()
                 await game.dice3d.showForRoll(sideroll)
-                switch (4) {
+                switch (sideroll._total) {
                     case 1:
-                        message('<strong>1</strong>: You cast <strong>Confusion</strong> ');
+                        message('<strong>1</strong>: You cast <strong>Confusion</strong> <br> https://5e.tools/spells.html#confusion_xphb');
                         break;
                     case 2:
-                        message('<strong>2</strong>: You cast <strong>Fireball</strong>');
+                        message('<strong>2</strong>: You cast <strong>Fireball</strong> <br> https://5e.tools/spells.html#fireball_xphb');
                         break;
                     case 3:
-                        message('<strong>3</strong>: You cast <strong>Fog Cloud</strong>');
+                        message('<strong>3</strong>: You cast <strong>Fog Cloud</strong> <br> https://5e.tools/spells.html#fog%20cloud_xphb');
                         break;
                     case 4:
-                        message('<strong>4</strong>: You cast <strong>Fly</strong> (cast on a random creature within 60 feet of you)');
-                        owntoken = canvas.tokens.controlled[0]
-                        sqsize = canvas.scene.dimensions.size
-                        sqdist = canvas.scene.dimensions.distance
-                        alltokens = canvas.tokens.placeables.filter(x => x.worldVisible)
-                        owntokenloc = owntoken.position
-                        owntokencentre = [owntokenloc.x + owntoken.hitArea.height / 2, owntokenloc.y + owntoken.hitArea.width / 2]
-                        nearby = []
-                        for (let i = 0; i < alltokens.length; i++) {
-                            token = alltokens[i]
-                            tokenloc = token.position
-                            tokencentre = [tokenloc.x + token.hitArea.height / 2, tokenloc.y + token.hitArea.width / 2]
-                            aa = Math.pow(owntokencentre[0] - tokencentre[0], 2)
-                            ab = Math.pow(owntokencentre[1] - tokencentre[1], 2)
-                            c = Math.pow(aa + ab, 0.5)
-                            if ((c / sqsize * sqdist) < 60) {
-                                nearby.push(token)
-                            }
-                        }
-                        txt = ""
-                        for (let i = 0; i < nearby.length; i++) {
-                            txt += "<strong>" + (i + 1) + "</strong>: " + nearby[i].name + "<br>"
-                        }
+                        message('<strong>4</strong>: You cast <strong>Fly</strong> (cast on a random creature within 60 feet of you) <br> https://5e.tools/spells.html#fly_xphb');
+
+                        creaturesinrangeasstrresult = creaturesinrangeasstr(30)
+                        txt = creaturesinrangeasstrresult[0]
+                        let nearby = creaturesinrangeasstrresult[1]
+
                         message(txt)
-                        sideroll = await new Roll('1d' + nearby.length).evaluate()
-                        await game.dice3d.showForRoll(sideroll)
-                        message('<strong>' + sideroll._total + '</strong>: You cast <strong>Fly</strong> on <strong>' + nearby[sideroll._total - 1].name + '</strong>');
-                        canvas.tokens.placeables[sideroll._total - 1].setTarget()
+                        targetingroll = await new Roll('1d' + nearby.length).evaluate()
+                        console.log(nearby)
+                        await game.dice3d.showForRoll(targetingroll)
+                        message('<strong>' + sideroll._total + '</strong>: You cast <strong>Fly</strong> on <strong>' + nearby[targetingroll._total - 1].name + '</strong>');
+                        //canvas.tokens.placeables[targetingroll._total - 1].setTarget()
+                        canvas.ping(nearby[targetingroll._total - 1].center, {
+                            style: "alert",
+                            duration: 5000
+                        });
+
                         break;
                     case 5:
-                        message('<strong>5</strong>: You cast <strong>Grease</strong>');
+                        message('<strong>5</strong>: You cast <strong>Grease</strong> <br> https://5e.tools/spells.html#grease_xphb');
                         break;
                     case 6:
-                        message('<strong>6</strong>: You cast <strong>Levitate</strong> (cast on yourself)  https://5e.tools/spells.html#levitate_xphb');
+                        message('<strong>6</strong>: You cast <strong>Levitate</strong> (cast on yourself) <br> https://5e.tools/spells.html#levitate_xphb');
                         break;
                     case 7:
-                        message('<strong>7</strong>: You cast <strong>Magic Missile</strong> (cast as a level 5 spell)');
+                        message('<strong>7</strong>: You cast <strong>Magic Missile</strong> (cast as a level 5 spell) <br> https://5e.tools/spells.html#magic%20missile_xphb');
                         break;
                     case 8:
-                        message('<strong>8</strong>: You cast <strong>Mirror Image</strong>');
+                        message('<strong>8</strong>: You cast <strong>Mirror Image</strong> <br> https://5e.tools/spells.html#mirror%20image_xphb');
                         break;
                     case 9:
-                        message('<strong>9</strong>: You cast <strong>Polymorph</strong> (cast on yourself), and if you fail the saving throw, you turn into a Goat');
+                        message('<strong>9</strong>: You cast <strong>Polymorph</strong> (cast on yourself), and if you fail the saving throw, you turn into a Goat <br> https://5e.tools/spells.html#polymorph_xphb');
                         break;
                     case 10:
-                        message('<strong>10</strong>: You cast <strong>See Invisibility</strong>');
+                        message('<strong>10</strong>: You cast <strong>See Invisibility</strong> <br> https://5e.tools/spells.html#see%20invisibility_xphb');
                         break;
                 }
                 break;
@@ -362,14 +399,14 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 63:
             case 64:
                 txt += 'For the next minute, any flammable, nonmagical object you touch that isn’t being worn or carried by another creature bursts into flame, takes 1d4 Fire damage, and is burning.';
-                messageandeffect(txt, 60);
+                messageandeffect(txt, 60, 'Fiery Touch');
                 break;
             case 65:
             case 66:
             case 67:
             case 68:
                 txt += 'If you die within the next hour, you immediately revive as if by the Reincarnate spell.';
-                messageandeffect(txt, 60 * 60);
+                messageandeffect(txt, 60 * 60, 'Auto Reincarnate');
                 break;
             case 69:
             case 70:
@@ -377,7 +414,7 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 72:
                 txt += 'You have the Frightened condition until the end of your next turn. <br>' +
                     'The DM determines the source of your fear.';
-                messageandeffect(txt, 12);
+                messageandeffect(txt, 12, 'Frightened');
                 break;
             case 73:
             case 74:
@@ -385,42 +422,48 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 76:
                 txt += 'You teleport up to 60 feet to an unoccupied space you can see.';
                 message(txt);
+
+                let owntoken = canvas.tokens.controlled[0];
+
+                let templateData = {
+                  t: "circle",
+                  user: game.user.id,
+                  x: owntoken.center.x,
+                  y: owntoken.center.y,
+                  distance: 60,            // radius in scene units (e.g. feet)
+                  fillColor: "#0000ff",
+                  fillAlpha: 0.01,
+                  borderColor: "#ff0000",
+                  borderAlpha: 1.0
+                };
+
+                await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
+
+
                 break;
             case 77:
             case 78:
             case 79:
             case 80:
                 txt += 'A random creature within 60 feet of you has the Poisoned condition for 1d4 hours.<br>';
-
-                owntoken = canvas.tokens.controlled[0]
-                sqsize = canvas.scene.dimensions.size
-                sqdist = canvas.scene.dimensions.distance
-                alltokens = canvas.tokens.placeables.filter(x => x.worldVisible)
-                owntokenloc = owntoken.position
-                owntokencentre = [owntokenloc.x + owntoken.hitArea.height / 2, owntokenloc.y + owntoken.hitArea.width / 2]
-                nearby = []
-                for (let i = 0; i < alltokens.length; i++) {
-                    token = alltokens[i]
-                    tokenloc = token.position
-                    tokencentre = [tokenloc.x + token.hitArea.height / 2, tokenloc.y + token.hitArea.width / 2]
-                    aa = Math.pow(owntokencentre[0] - tokencentre[0], 2)
-                    ab = Math.pow(owntokencentre[1] - tokencentre[1], 2)
-                    c = Math.pow(aa + ab, 0.5)
-                    if ((c / sqsize * sqdist) < 60) {
-                        nearby.push(token)
-                    }
-                }
-
-                for (let i = 0; i < nearby.length; i++) {
-                    txt += "<strong>" + (i + 1) + "</strong>: " + nearby[i].name + "<br>"
-                }
                 message(txt)
-                sideroll = await new Roll('1d' + nearby.length).evaluate()
-                game.dice3d.showForRoll(sideroll)
+
+                creaturesinrangeasstrresult = creaturesinrangeasstr(60)
+                txt = creaturesinrangeasstrresult[0]
+                let nearby = creaturesinrangeasstrresult[1]
+
+                message(txt)
+                targetingroll = await new Roll('1d' + nearby.length).evaluate()
+                await game.dice3d.showForRoll(targetingroll)
                 hours = await new Roll('1d4').evaluate()
                 await game.dice3d.showForRoll(hours)
-                messageandeffect('<strong>' + nearby[sideroll._total - 1].name + '</strong> has the Poisoned condition for <strong>' + hours._total + '</strong> hours', 60 * 60 * hours._total);
-                canvas.tokens.placeables[sideroll._total - 1].setTarget()
+
+                message('<strong>' + nearby[targetingroll._total - 1].name + '</strong> has the Poisoned condition for <strong>' + hours._total + '</strong> hours');
+                //canvas.tokens.placeables[targetingroll._total - 1].setTarget()
+                canvas.ping(nearby[targetingroll._total - 1].center, {
+                    style: "alert",
+                    duration: 5000
+                });
 
                 break;
             case 81:
@@ -429,7 +472,7 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 84:
                 txt += 'You radiate Bright Light in a 30-foot radius for the next minute. <br>' +
                     'Any creature that ends its turn within 5 feet of you has the Blinded condition until the end of its next turn.';
-                messageandeffect(txt, 60);
+                messageandeffect(txt, 60, 'Bright Light');
                 var token = canvas.tokens.controlled[0]
                 token.document.update({
                     light: {
@@ -447,101 +490,56 @@ if (canvas.tokens.controlled[0] === undefined) {
             case 86:
             case 87:
             case 88:
+
                 txt += 'Up to three creatures of your choice that you can see within 30 feet of you take 1d10 Necrotic damage. <br>' +
-                    'You regain Hit Points equal to the sum of the Necrotic damage dealt.<br><br><br>' +
-                    'Creatures within 30 feet:<br>';
+                    'You regain Hit Points equal to the sum of the Necrotic damage dealt.'
 
+                txt += '<br><br><br>'
 
-                owntoken = canvas.tokens.controlled[0]
-                sqsize = canvas.scene.dimensions.size
-                sqdist = canvas.scene.dimensions.distance
-                alltokens = canvas.tokens.placeables.filter(x => x.worldVisible)
-                owntokenloc = owntoken.position
-                owntokencentre = [owntokenloc.x + owntoken.hitArea.height / 2, owntokenloc.y + owntoken.hitArea.width / 2]
-                nearby = []
-                for (let i = 0; i < alltokens.length; i++) {
-                    token = alltokens[i]
-                    tokenloc = token.position
-                    tokencentre = [tokenloc.x + token.hitArea.height / 2, tokenloc.y + token.hitArea.width / 2]
-                    aa = Math.pow(owntokencentre[0] - tokencentre[0], 2)
-                    ab = Math.pow(owntokencentre[1] - tokencentre[1], 2)
-                    c = Math.pow(aa + ab, 0.5)
-                    if ((c / sqsize * sqdist) <= 30) {
-                        nearby.push(token)
-                    }
-                }
+                creaturesinrangeasstrresult = creaturesinrangeasstr(30)
+                txt += creaturesinrangeasstrresult[0]
 
-                for (let i = 0; i < nearby.length; i++) {
-                    txt += nearby[i].name + "<br>"
-                }
 
                 message(txt);
+
+                Necrotic = await new Roll("1d10").evaluate();
+                token = canvas.tokens.controlled[0];
+
+                Necrotic.toMessage({
+                    speaker: ChatMessage.getSpeaker({ token }),
+                    flavor: "Necrotic Damage"
+                });
+
                 break;
             case 89:
             case 90:
             case 91:
             case 92:
-                txt += 'Up to three creatures of your choice that you can see within 30 feet of you take 4d10 Lightning damage.<br><br><br>' +
-                    'Creatures within 30 feet:<br>';
-
-
-                owntoken = canvas.tokens.controlled[0]
-                sqsize = canvas.scene.dimensions.size
-                sqdist = canvas.scene.dimensions.distance
-                alltokens = canvas.tokens.placeables.filter(x => x.worldVisible)
-                owntokenloc = owntoken.position
-                owntokencentre = [owntokenloc.x + owntoken.hitArea.height / 2, owntokenloc.y + owntoken.hitArea.width / 2]
-                nearby = []
-                for (let i = 0; i < alltokens.length; i++) {
-                    token = alltokens[i]
-                    tokenloc = token.position
-                    tokencentre = [tokenloc.x + token.hitArea.height / 2, tokenloc.y + token.hitArea.width / 2]
-                    aa = Math.pow(owntokencentre[0] - tokencentre[0], 2)
-                    ab = Math.pow(owntokencentre[1] - tokencentre[1], 2)
-                    c = Math.pow(aa + ab, 0.5)
-                    if ((c / sqsize * sqdist) <= 30) {
-                        nearby.push(token)
-                    }
-                }
-
-                for (let i = 0; i < nearby.length; i++) {
-                    txt += nearby[i].name + "<br>"
-                }
-
+                txt += 'Up to three creatures of your choice that you can see within 30 feet of you take 4d10 Lightning damage.'
+                txt += '<br><br><br>'
+                creaturesinrangeasstrresult = creaturesinrangeasstr(30)
+                txt += creaturesinrangeasstrresult[0]
                 message(txt);
+
+                Lightning = await new Roll("4d10").evaluate();
+                token = canvas.tokens.controlled[0];
+                Lightning.toMessage({
+                    speaker: ChatMessage.getSpeaker({ token }),
+                    flavor: "Lightning Damage"
+                });
+
+
                 break;
             case 93:
             case 94:
             case 95:
             case 96:
                 txt += 'You and all creatures within 30 feet of you have Vulnerability to Piercing damage for the next minute.'
-                addeffects([[txt, 60]]);
-                txt += '<br><br>Creatures within 30 feet:<br>';
+                addeffects([[txt, 60,'Vulnerability to Piercing']]);
 
-
-                owntoken = canvas.tokens.controlled[0]
-                sqsize = canvas.scene.dimensions.size
-                sqdist = canvas.scene.dimensions.distance
-                alltokens = canvas.tokens.placeables.filter(x => x.worldVisible)
-                owntokenloc = owntoken.position
-                owntokencentre = [owntokenloc.x + owntoken.hitArea.height / 2, owntokenloc.y + owntoken.hitArea.width / 2]
-                nearby = []
-                for (let i = 0; i < alltokens.length; i++) {
-                    token = alltokens[i]
-                    tokenloc = token.position
-                    tokencentre = [tokenloc.x + token.hitArea.height / 2, tokenloc.y + token.hitArea.width / 2]
-                    aa = Math.pow(owntokencentre[0] - tokencentre[0], 2)
-                    ab = Math.pow(owntokencentre[1] - tokencentre[1], 2)
-                    c = Math.pow(aa + ab, 0.5)
-                    if ((c / sqsize * sqdist) <= 30) {
-                        nearby.push(token)
-                    }
-                }
-
-                for (let i = 0; i < nearby.length; i++) {
-                    txt += nearby[i].name + "<br>"
-                }
-
+                txt += '<br><br>'
+                creaturesinrangeasstrresult = creaturesinrangeasstr(30)
+                txt += creaturesinrangeasstrresult[0]
                 message(txt);
                 break;
             case 97:
@@ -563,17 +561,24 @@ if (canvas.tokens.controlled[0] === undefined) {
                     case 1:
                         message('<strong>1</strong>: you regain 2d10 Hit Points; ');
 
-                        heal = await new Roll('2d10').evaluate()
-                        await game.dice3d.showForRoll(heal)
-                        message('you regain <strong>' + heal._total + '</strong> Hit Points');
+
+                        heal = await new Roll("2d10").evaluate();
+                        token = canvas.tokens.controlled[0];
+                        heal.toMessage({
+                            speaker: ChatMessage.getSpeaker({ token }),
+                            flavor: "Healing"
+                        });
 
                         break;
                     case 2:
                         message('<strong>2</strong>: one ally of your choice within 300 feet of you regains 2d10 Hit Points; ');
 
-                        heal = await new Roll('2d10').evaluate()
-                        await game.dice3d.showForRoll(heal)
-                        message('one ally of your choice within 300 feet of you regain <strong>' + heal._total + '</strong> Hit Points');
+                        heal = await new Roll("2d10").evaluate();
+                        token = canvas.tokens.controlled[0];
+                        heal.toMessage({
+                            speaker: ChatMessage.getSpeaker({ token }),
+                            flavor: "Healing"
+                        });
 
                         break;
                     case 3:
@@ -586,9 +591,9 @@ if (canvas.tokens.controlled[0] === undefined) {
                         message('<strong>5</strong>: you regain all your expended Sorcery Points.');
                         break;
                     case 6:
-                        message('<strong>6</strong>: all the effects of row 17–20 affect you simultaneously.<br><br><br>' +
+                        txt = '<strong>6</strong>: all the effects of row 17–20 affect you simultaneously.<br><br><br>' +
                             'for one minute:<br><br>' +
-                            'messageandeffect’re surrounded by faint, ethereal music only you and creatures within 5 feet of you can hear; <br><br>' +
+                            'you’re surrounded by faint, ethereal music only you and creatures within 5 feet of you can hear; <br><br>' +
                             'you’re surrounded by faint, ethereal music only you and creatures within 5 feet of you can hear; <br><br>' +
                             'your size increases by one size category; <br><br>' +
                             'you grow a long beard made of feathers that remains until you sneeze, at which point the feathers explode from your face and vanish; <br><br>' +
@@ -596,7 +601,16 @@ if (canvas.tokens.controlled[0] === undefined) {
                             'illusory butterflies flutter in the air within 10 feet of you; <br><br>' +
                             'an eye appears on your forehead, granting you Advantage on Wisdom (Perception) checks; <br><br>' +
                             'pink bubbles float out of your mouth whenever you speak; <br><br>' +
-                            'your skin turns a vibrant shade of blue for 24 hours or until the effect is ended by a Remove Curse spell.', 60);
+                            'your skin turns a vibrant shade of blue for 24 hours or until the effect is ended by a Remove Curse spell.'
+                        message(txt);
+                        addeffects([['For 1 minute, you’re surrounded by faint, ethereal music only you and creatures within 5 feet of you can hear; ', 60, 'you’re surrounded by faint, ethereal music'],
+                        ['For 1 minute, your size increases by one size category; ', 60, 'you are bigger'],
+                        ['You grow a long beard made of feathers that remains until you sneeze, at which point the feathers explode from your face and vanish; ', 99999, "Beard"],
+                        ['For 1 minute, you must shout when you speak.', 60, "You're Shouty"],
+                        ['For 1 minute, illusory butterflies flutter in the air within 10 feet of you.', 60, 'Butterflies'],
+                        ['For 1 minute, an eye appears on your forehead, granting you Advantage on Wisdom (Perception) checks.', 60, 'Third Eye - Advantage on Wisdom (Perception) checks'],
+                        ['For 1 minute, pink bubbles float out of your mouth whenever you speak.', 60, "Bubbles"],
+                        ['your skin turns a vibrant shade of blue for 24 hours or until the effect is ended by a Remove Curse spell.', 60 * 60 * 24, "You're Blue"]])
                         break;
                 }
                 break;
