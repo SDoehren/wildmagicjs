@@ -876,17 +876,29 @@ async function advantagedialog(surgerolls) {
     return selection;
 }
 
-async function standardwithcheck(){
-    let check = checktoken()
+async function standard(checkforsurge) {
+    if (!checktoken()) return;
 
-if (check) {
-    check = await checksurge()
+    let check = checkforsurge ? await checksurge() : true;
+
+    if (check) {
+        let surgerollresult = await surgeroll()
+        await surgeresult(surgerollresult)
+    }
 }
-if (check) {
-    let surgerollresult = await surgeroll()
-    ui.notifications.warn(surgerollresult)
-    await surgeresult(90)
-}
+
+async function advantage(checkforsurge) {
+    if (!checktoken()) return;
+
+    let check = checkforsurge ? await checksurge() : true;
+
+    if (check) {
+        let surgerolls = await new Roll('2d100').evaluate()
+        dicesoniceroll(surgerolls)
+        surgerolls = surgerolls.terms[0].results.map(x => x.result)
+        let surgechoice = await advantagedialog(surgerolls)
+        await surgeresult(surgechoice)
+    }
 }
 
 

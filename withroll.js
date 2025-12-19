@@ -17,19 +17,9 @@ async function loadWildMagic() {
 
 (async () => {
   try {
-    // 1) Load the GitHub script (defines message, checksurge, surgeroll, surgeresult, etc.)
     await loadWildMagic();
 
-    // 2) Make sure a token is selected
-    if (!checktoken()) return;
-
-    // 3) Check if a surge happens (your script already handles chat + dice)
-    const surgeHappens = await checksurge();
-    if (!surgeHappens) return;
-
-    // 4) Roll on the wild surge table and apply the result
-    const result = await surgeroll();    // returns 1–100
-    await surgeresult(result);
+    standard(true)
 
   } catch (err) {
     console.error("Wild Magic macro error:", err);
