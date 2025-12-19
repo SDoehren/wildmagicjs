@@ -15,7 +15,7 @@ async function loadWildMagic() {
 (async () => {
   try {
     await loadWildMagic();
-    standard(true)
+    advantage(true)
   } catch (err) {
     console.error("Wild Magic macro error:", err);
     ui.notifications.error(`Wild Magic error: ${err.message}`);
