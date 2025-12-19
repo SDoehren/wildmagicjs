@@ -876,6 +876,20 @@ async function advantagedialog(surgerolls) {
     return selection;
 }
 
+async function standardwithcheck(){
+    let check = checktoken()
+
+if (check) {
+    check = await checksurge()
+}
+if (check) {
+    let surgerollresult = await surgeroll()
+    ui.notifications.warn(surgerollresult)
+    await surgeresult(90)
+}
+}
+
+
 /*let check = checktoken()
 
 if (check) {
