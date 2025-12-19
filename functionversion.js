@@ -900,23 +900,3 @@ async function advantage(checkforsurge) {
         await surgeresult(surgechoice)
     }
 }
-
-
-/*let check = checktoken()
-
-if (check) {
-    check = await checksurge()
-}
-check=true
-if (check) {
-    let surgerollresult = await surgeroll()
-    ui.notifications.warn(surgerollresult)
-    await surgeresult(90)
-}
-
-let surgerolls = await new Roll('2d100').evaluate()
-dicesoniceroll(surgerolls)
-surgerolls = surgerolls.terms[0].results.map(x => x.result)
-let surgechoice = await advantagedialog(surgerolls)
-
-await surgeresult(surgechoice)*/
